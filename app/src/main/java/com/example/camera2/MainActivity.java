@@ -20,6 +20,7 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = MainActivity.class.getSimpleName();
 
     private int attemptPermissionRequest = 0;
+    private CameraFragment mCameraFragment;
 
 
     @Override
@@ -28,6 +29,16 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
+        if (null == savedInstanceState) {
+            mCameraFragment = CameraFragment.newInstance();
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.frame, mCameraFragment)
+                    .commit();
+        }
+
+        findViewById(R.id.btnTakeSnapshot).setOnClickListener(v -> {
+            mCameraFragment.takePicture();
+        });
     }
 
 
