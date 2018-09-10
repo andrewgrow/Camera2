@@ -22,19 +22,25 @@ import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.media.Image;
 import android.media.ImageReader;
+import android.media.MediaRecorder;
+import android.os.HandlerThread;
 import android.support.annotation.NonNull;
 import android.util.Log;
 import android.util.Size;
 import android.view.Surface;
 import android.view.TextureView;
+import android.widget.Toast;
 
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 import java.util.Locale;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
@@ -48,6 +54,7 @@ public class CameraHelper implements LifecycleObserver {
     private static final int STATE_WAITING_PRECAPTURE = 2; // Camera state: Waiting for the exposure to be precapture state.
     private static final int STATE_WAITING_NON_PRECAPTURE = 3; // Camera state: Waiting for the exposure state to be something other than precapture.
     private static final int STATE_PICTURE_TAKEN = 4; // Camera state: Picture was taken.
+    private static Size mVideoSize;
 
     private CameraFragment mCameraFragment;
     private TextureView mTextureView;
@@ -61,6 +68,9 @@ public class CameraHelper implements LifecycleObserver {
     private CaptureRequest mPreviewRequest;
 
     private ImageReader mImageReader; // an ImageReader that handles still image capture.
+
+    protected boolean mIsRecordingVideo;
+    private String mNextVideoAbsolutePath;
 
     private int mState = STATE_PREVIEW; // The current state of camera state for taking pictures.
 
@@ -125,6 +135,7 @@ public class CameraHelper implements LifecycleObserver {
 
     };
     private Size mLargest;
+    private MediaRecorder mMediaRecorder;
 
     public CameraFragment getNewCameraFragment() {
         mCameraFragment = CameraFragment.newInstance(CameraHelper.this);
@@ -509,5 +520,153 @@ public class CameraHelper implements LifecycleObserver {
             }
         }
 
+    }
+
+    private String getVideoFilePath(Context context) {
+        final File dir = context.getExternalFilesDir(null);
+        return (dir == null ? "" : (dir.getAbsolutePath() + "/"))
+                + System.currentTimeMillis() + ".mp4";
+    }
+
+    protected void startRecordingVideo() {
+        if (null == mCameraDevice || !mTextureView.isAvailable() || null == mLargest) {
+            return;
+        }
+        try {
+            closePreviewSession();
+            setUpMediaRecorder();
+            SurfaceTexture texture = mTextureView.getSurfaceTexture();
+            assert texture != null;
+            texture.setDefaultBufferSize(mLargest.getWidth(), mLargest.getHeight());
+            mPreviewRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
+            List<Surface> surfaces = new ArrayList<>();
+
+            // Set up Surface for the camera preview
+            Surface previewSurface = new Surface(texture);
+            surfaces.add(previewSurface);
+            mPreviewRequestBuilder.addTarget(previewSurface);
+
+            // Set up Surface for the MediaRecorder
+            Surface recorderSurface = mMediaRecorder.getSurface();
+            surfaces.add(recorderSurface);
+            mPreviewRequestBuilder.addTarget(recorderSurface);
+
+            // Start a capture session
+            // Once the session starts, we can update the UI and start recording
+            mCameraDevice.createCaptureSession(surfaces, new CameraCaptureSession.StateCallback() {
+
+                @Override
+                public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
+                    mCaptureSession = cameraCaptureSession;
+                    updatePreview();
+                    mCameraFragment.getActivity().runOnUiThread(new Runnable() {
+                        @Override
+                        public void run() {
+                            // UI
+//                            mButtonVideo.setText(R.string.stop);
+                            Log.d(TAG, "VIDEO CAPTURE STARTED!");
+                            mIsRecordingVideo = true;
+
+                            // Start recording
+                            mMediaRecorder.start();
+                        }
+                    });
+                }
+
+                @Override
+                public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
+//                    Activity activity = getActivity();
+//                    if (null != activity) {
+//                        Toast.makeText(activity, "Failed", Toast.LENGTH_SHORT).show();
+//                    }
+                }
+            }, null);
+        } catch (CameraAccessException | IOException e) {
+            e.printStackTrace();
+        }
+
+    }
+
+    /**
+     * Update the camera preview. StartPreview() needs to be called in advance.
+     */
+    private void updatePreview() {
+        if (null == mCameraDevice) {
+            return;
+        }
+        try {
+            setUpCaptureRequestBuilder(mPreviewRequestBuilder);
+            HandlerThread thread = new HandlerThread("CameraPreview");
+            thread.start();
+            mCaptureSession.setRepeatingRequest(mPreviewRequestBuilder.build(), null, null);
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void setUpCaptureRequestBuilder(CaptureRequest.Builder builder) {
+        builder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+    }
+
+    private void closePreviewSession() {
+        if (mCaptureSession != null) {
+            mCaptureSession.close();
+            mCaptureSession = null;
+        }
+    }
+
+    protected static void chooseVideoSize(Size[] choices) {
+        for (Size size : choices) {
+            if (size.getWidth() == size.getHeight() * 4 / 3 && size.getWidth() <= 1080) {
+                mVideoSize = size;
+            }
+        }
+    }
+
+    protected void stopRecordingVideo() {
+        // UI
+        mIsRecordingVideo = false;
+//        mButtonVideo.setText(R.string.record);
+        Log.d(TAG, "VIDEO CAPTURE STOPPED!");
+        // Stop recording
+        mMediaRecorder.stop();
+        mMediaRecorder.reset();
+
+        Log.d(TAG, "Video saved: " + mNextVideoAbsolutePath);
+
+        mNextVideoAbsolutePath = null;
+        createCameraPreviewSession();
+    }
+
+    private void setUpMediaRecorder() throws IOException {
+        final Activity activity = mCameraFragment.getActivity();
+        if (null == activity) {
+            return;
+        }
+        if (mMediaRecorder == null) {
+            mMediaRecorder = new MediaRecorder();
+        }
+        mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);
+        mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
+        mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
+        if (mNextVideoAbsolutePath == null || mNextVideoAbsolutePath.isEmpty()) {
+            mNextVideoAbsolutePath = getVideoFilePath(mCameraFragment.getActivity());
+        }
+        mMediaRecorder.setOutputFile(mNextVideoAbsolutePath);
+        mMediaRecorder.setVideoEncodingBitRate(10000000);
+        mMediaRecorder.setVideoFrameRate(30);
+        mMediaRecorder.setVideoSize(mVideoSize.getWidth(), mVideoSize.getHeight());
+        mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);
+        mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
+        int rotation = activity.getWindowManager().getDefaultDisplay().getRotation();
+        switch (mCameraFragment.mSensorOrientation) {
+            case CameraFragment.SENSOR_ORIENTATION_DEFAULT_DEGREES:
+                mMediaRecorder.setOrientationHint(CameraFragment.DEFAULT_ORIENTATIONS.get(rotation));
+                break;
+            case CameraFragment.SENSOR_ORIENTATION_INVERSE_DEGREES:
+                mMediaRecorder.setOrientationHint(CameraFragment.INVERSE_ORIENTATIONS.get(rotation));
+                break;
+        }
+        mMediaRecorder.prepare();
     }
 }

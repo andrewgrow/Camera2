@@ -29,8 +29,18 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             app:layout_constraintLeft_toLeftOf="parent"
-            app:layout_constraintRight_toRightOf="parent"
+            app:layout_constraintRight_toLeftOf="@+id/btnTakeVideo"
             android:text="Take Snapshot"
+            android:padding="20dp"
+            />
+
+        <Button
+            android:id="@+id/btnTakeVideo"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:layout_constraintLeft_toRightOf="@+id/btnTakeSnapshot"
+            app:layout_constraintRight_toRightOf="parent"
+            android:text="Take Video"
             android:padding="20dp"
             />
 

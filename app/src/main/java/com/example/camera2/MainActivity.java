@@ -40,6 +40,14 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
+        findViewById(R.id.btnTakeVideo).setOnClickListener(v -> {
+            if (cameraHelper.mIsRecordingVideo) {
+                cameraHelper.stopRecordingVideo();
+            } else {
+                cameraHelper.startRecordingVideo();
+            }
+        });
+
     }
 
 

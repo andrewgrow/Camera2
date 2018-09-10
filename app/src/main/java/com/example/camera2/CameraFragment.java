@@ -13,6 +13,7 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.ImageReader;
+import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.support.annotation.NonNull;
 import android.support.v4.app.Fragment;
@@ -44,7 +45,7 @@ public class CameraFragment extends Fragment {
     private AutoFitTextureView mTextureView;
     private TextureView textureView;
     protected Size mPreviewSize; // The size of camera preview.
-    private int mSensorOrientation; // Orientation of the camera sensor
+    protected int mSensorOrientation; // Orientation of the camera sensor
     protected boolean mFlashSupported; // Whether the current camera device supports Flash or not.
     private String mCameraId; // ID of the current CameraDevice
 
@@ -55,6 +56,26 @@ public class CameraFragment extends Fragment {
         ORIENTATIONS.append(Surface.ROTATION_180, 270);
         ORIENTATIONS.append(Surface.ROTATION_270, 180);
     }
+
+    protected static final SparseIntArray DEFAULT_ORIENTATIONS = new SparseIntArray();
+    protected static final SparseIntArray INVERSE_ORIENTATIONS = new SparseIntArray();
+
+    static {
+        DEFAULT_ORIENTATIONS.append(Surface.ROTATION_0, 90);
+        DEFAULT_ORIENTATIONS.append(Surface.ROTATION_90, 0);
+        DEFAULT_ORIENTATIONS.append(Surface.ROTATION_180, 270);
+        DEFAULT_ORIENTATIONS.append(Surface.ROTATION_270, 180);
+    }
+
+    static {
+        INVERSE_ORIENTATIONS.append(Surface.ROTATION_0, 270);
+        INVERSE_ORIENTATIONS.append(Surface.ROTATION_90, 180);
+        INVERSE_ORIENTATIONS.append(Surface.ROTATION_180, 90);
+        INVERSE_ORIENTATIONS.append(Surface.ROTATION_270, 0);
+    }
+
+    protected static final int SENSOR_ORIENTATION_DEFAULT_DEGREES = 90;
+    protected static final int SENSOR_ORIENTATION_INVERSE_DEGREES = 270;
 
     public static CameraFragment newInstance(CameraHelper cameraHelper) {
         CameraFragment cameraFragment = new CameraFragment();
@@ -163,6 +184,8 @@ public class CameraFragment extends Fragment {
                 mPreviewSize = chooseOptimalSize(map.getOutputSizes(SurfaceTexture.class),
                         rotatedPreviewWidth, rotatedPreviewHeight, maxPreviewWidth,
                         maxPreviewHeight, largest);
+
+                CameraHelper.chooseVideoSize(map.getOutputSizes(MediaRecorder.class));
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
                 mTextureView.setAspectRatio(
