@@ -18,6 +18,7 @@ import android.support.annotation.NonNull;
 import android.support.v4.app.Fragment;
 import android.util.Log;
 import android.util.Size;
+import android.util.SparseIntArray;
 import android.view.LayoutInflater;
 import android.view.Surface;
 import android.view.TextureView;
@@ -46,6 +47,14 @@ public class CameraFragment extends Fragment {
     private int mSensorOrientation; // Orientation of the camera sensor
     protected boolean mFlashSupported; // Whether the current camera device supports Flash or not.
     private String mCameraId; // ID of the current CameraDevice
+
+    private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
+    static {
+        ORIENTATIONS.append(Surface.ROTATION_0, 90);
+        ORIENTATIONS.append(Surface.ROTATION_90, 0);
+        ORIENTATIONS.append(Surface.ROTATION_180, 270);
+        ORIENTATIONS.append(Surface.ROTATION_270, 180);
+    }
 
     public static CameraFragment newInstance(CameraHelper cameraHelper) {
         CameraFragment cameraFragment = new CameraFragment();
@@ -84,11 +93,11 @@ public class CameraFragment extends Fragment {
                 CameraCharacteristics characteristics
                         = manager.getCameraCharacteristics(cameraId);
 
-                // We don't use a front facing camera in this sample.
-                Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
-                if (facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) {
-                    continue;
-                }
+//                // We don't use a front facing camera in this sample.
+//                Integer facing = characteristics.get(CameraCharacteristics.LENS_FACING);
+//                if (facing != null && facing == CameraCharacteristics.LENS_FACING_FRONT) {
+//                    continue;
+//                }
 
                 StreamConfigurationMap map = characteristics.get(
                         CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
@@ -100,6 +109,7 @@ public class CameraFragment extends Fragment {
                 Size largest = Collections.max(
                         Arrays.asList(map.getOutputSizes(ImageFormat.JPEG)),
                         new CompareSizesByArea());
+                cameraHelper.setLargest(largest);
 
 
                 // Find out if we need to swap dimension to get the preview size relative to sensor
@@ -155,7 +165,6 @@ public class CameraFragment extends Fragment {
                         maxPreviewHeight, largest);
 
                 // We fit the aspect ratio of TextureView to the size of preview we picked.
-                int orientation = getResources().getConfiguration().orientation;
                 mTextureView.setAspectRatio(
                         mPreviewSize.getWidth(), mPreviewSize.getHeight());
 
@@ -172,9 +181,21 @@ public class CameraFragment extends Fragment {
         } catch (NullPointerException e) {
             // Currently an NPE is thrown when the Camera2API is used but not supported on the
             // device this code runs.
-//            ErrorDialog.newInstance(getString(R.string.camera_error))
-//                    .show(getChildFragmentManager(), FRAGMENT_DIALOG);
         }
+    }
+
+    /**
+     * Retrieves the JPEG orientation from the specified screen rotation.
+     *
+     * @param rotation The screen rotation.
+     * @return The JPEG orientation (one of 0, 90, 270, and 360)
+     */
+    protected int getOrientation(int rotation) {
+        // Sensor orientation is 90 for most devices, or 270 for some devices (eg. Nexus 5X)
+        // We have to take that into account and rotate JPEG properly.
+        // For devices with orientation of 90, we simply return our mapping from ORIENTATIONS.
+        // For devices with orientation of 270, we need to rotate the JPEG 180 degrees.
+        return (ORIENTATIONS.get(rotation) + mSensorOrientation + 270) % 360;
     }
 
     /**
