@@ -14,6 +14,7 @@ import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
+import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
@@ -270,6 +271,10 @@ public class CameraHelper implements LifecycleObserver {
      * Initiate a still image capture.
      */
     public void takePicture() {
+        if (mIsRecordingVideo) {
+//            takeSnapshot();
+            return;
+        }
         lockFocus();
     }
 
@@ -550,6 +555,8 @@ public class CameraHelper implements LifecycleObserver {
             Surface recorderSurface = mMediaRecorder.getSurface();
             surfaces.add(recorderSurface);
             mPreviewRequestBuilder.addTarget(recorderSurface);
+
+//            surfaces.add(mImageReader.getSurface());
 
             // Start a capture session
             // Once the session starts, we can update the UI and start recording

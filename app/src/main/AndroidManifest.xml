@@ -18,8 +18,19 @@
         android:supportsRtl="true"
         android:theme="@style/AppTheme"
         >
+        <!--<activity-->
+            <!--android:name="com.example.camera2.MainActivity"-->
+            <!--android:screenOrientation="landscape"-->
+            <!--android:configChanges="orientation|screenSize"-->
+            <!--&gt;-->
+            <!--<intent-filter>-->
+                <!--<action android:name="android.intent.action.MAIN" />-->
+
+                <!--<category android:name="android.intent.category.LAUNCHER" />-->
+            <!--</intent-filter>-->
+        <!--</activity>-->
         <activity
-            android:name=".MainActivity"
+            android:name="com.example.camera2.Camera2VideoImageActivity"
             android:screenOrientation="landscape"
             android:configChanges="orientation|screenSize"
             >
