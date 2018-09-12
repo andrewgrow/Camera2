@@ -638,9 +638,9 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     }
 
     private static int sensorToDeviceRotation(CameraCharacteristics cameraCharacteristics, int deviceOrientation) {
-        int sensorOrienatation = cameraCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
+        int sensorOrientation = cameraCharacteristics.get(CameraCharacteristics.SENSOR_ORIENTATION);
         deviceOrientation = ORIENTATIONS.get(deviceOrientation);
-        return (sensorOrienatation + deviceOrientation + 360) % 360;
+        return (sensorOrientation + deviceOrientation + 360) % 360;
     }
 
     private static Size chooseOptimalSize(Size[] choices, int width, int height) {
