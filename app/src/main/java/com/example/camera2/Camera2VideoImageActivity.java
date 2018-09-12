@@ -2,10 +2,13 @@ package com.example.camera2;
 
 
 import android.Manifest;
+import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
+import android.graphics.Matrix;
+import android.graphics.RectF;
 import android.graphics.SurfaceTexture;
 import android.hardware.camera2.CameraAccessException;
 import android.hardware.camera2.CameraCaptureSession;
@@ -60,21 +63,23 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     private static final int STATE_PREVIEW = 0;
     private static final int STATE_WAIT_LOCK = 1;
     private int mCaptureState = STATE_PREVIEW;
-    private TextureView mTextureView;
+    private AutoFitTextureView mTextureView;
     private TextureView.SurfaceTextureListener mSurfaceTextureListener = new TextureView.SurfaceTextureListener() {
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
             setupCamera(width, height);
+            configureTransform(width, height);
             connectCamera();
         }
 
         @Override
         public void onSurfaceTextureSizeChanged(SurfaceTexture surface, int width, int height) {
-
+            configureTransform(width, height);
         }
 
         @Override
         public boolean onSurfaceTextureDestroyed(SurfaceTexture surface) {
+            closeCamera();
             return false;
         }
 
@@ -138,6 +143,8 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                     mBackgroundHandler.post(new ImageSaver(reader.acquireLatestImage()));
                 }
             };
+
+    private boolean mFlashSupported;
 
     private class ImageSaver implements Runnable {
 
@@ -276,7 +283,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         createImageFolder();
 
         mChronometer = (Chronometer) findViewById(R.id.chronometer);
-        mTextureView = (TextureView) findViewById(R.id.textureView);
+        mTextureView = (AutoFitTextureView) findViewById(R.id.textureView);
         mStillImageButton = (ImageButton) findViewById(R.id.cameraImageButton2);
         mStillImageButton.setOnClickListener(new View.OnClickListener() {
             @Override
@@ -334,6 +341,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
         if (mTextureView.isAvailable()) {
             setupCamera(mTextureView.getWidth(), mTextureView.getHeight());
+            configureTransform(mTextureView.getWidth(), mTextureView.getHeight());
             connectCamera();
         } else {
             mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
@@ -400,7 +408,8 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                         CameraCharacteristics.LENS_FACING_FRONT) {
                     continue;
                 }
-                StreamConfigurationMap map = cameraCharacteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                StreamConfigurationMap map = cameraCharacteristics.get(
+                        CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
                 int deviceOrientation = getWindowManager().getDefaultDisplay().getRotation();
                 mTotalRotation = sensorToDeviceRotation(cameraCharacteristics, deviceOrientation);
                 boolean swapRotation = mTotalRotation == 90 || mTotalRotation == 270;
@@ -416,6 +425,14 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                 mImageReader = ImageReader.newInstance(mImageSize.getWidth(), mImageSize.getHeight(), ImageFormat.JPEG, 1);
                 mImageReader.setOnImageAvailableListener(mOnImageAvailableListener, mBackgroundHandler);
                 mCameraId = cameraId;
+
+                // We fit the aspect ratio of TextureView to the size of preview we picked.
+                mTextureView.setAspectRatio(mPreviewSize.getWidth(), mPreviewSize.getHeight());
+
+                // Check if the flash is supported.
+                Boolean available = cameraCharacteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
+                mFlashSupported = available == null ? false : available;
+
                 return;
             }
         } catch (CameraAccessException e) {
@@ -710,5 +727,37 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
+    }
+
+    /**
+     * Configures the necessary {@link android.graphics.Matrix} transformation to `mTextureView`.
+     * This method should be called after the camera preview size is determined in
+     * setUpCameraOutputs and also the size of `mTextureView` is fixed.
+     *
+     * @param viewWidth  The width of `mTextureView`
+     * @param viewHeight The height of `mTextureView`
+     */
+    protected void configureTransform(int viewWidth, int viewHeight) {
+        if (null == mTextureView || null == mPreviewSize) {
+            return;
+        }
+        int rotation = getWindowManager().getDefaultDisplay().getRotation();
+        Matrix matrix = new Matrix();
+        RectF viewRect = new RectF(0, 0, viewWidth, viewHeight);
+        RectF bufferRect = new RectF(0, 0, mPreviewSize.getHeight(), mPreviewSize.getWidth());
+        float centerX = viewRect.centerX();
+        float centerY = viewRect.centerY();
+        if (Surface.ROTATION_90 == rotation || Surface.ROTATION_270 == rotation) {
+            bufferRect.offset(centerX - bufferRect.centerX(), centerY - bufferRect.centerY());
+            matrix.setRectToRect(viewRect, bufferRect, Matrix.ScaleToFit.FILL);
+            float scale = Math.max(
+                    (float) viewHeight / mPreviewSize.getHeight(),
+                    (float) viewWidth / mPreviewSize.getWidth());
+            matrix.postScale(scale, scale, centerX, centerY);
+            matrix.postRotate(90 * (rotation - 2), centerX, centerY);
+        } else if (Surface.ROTATION_180 == rotation) {
+            matrix.postRotate(180, centerX, centerY);
+        }
+        mTextureView.setTransform(matrix);
     }
 }
