@@ -2,7 +2,6 @@ package com.example.camera2;
 
 
 import android.Manifest;
-import android.app.Activity;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -32,6 +31,7 @@ import android.os.SystemClock;
 import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
+import android.support.v7.widget.SwitchCompat;
 import android.util.Log;
 import android.util.Size;
 import android.util.SparseIntArray;
@@ -58,6 +58,9 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
     private static final String TAG = "Camera2VideoImageActivi";
 
+    public static final String CAMERA_BACK = "0";
+    public static final String CAMERA_FRONT = "1";
+
     private static final int REQUEST_CAMERA_PERMISSION_RESULT = 0;
     private static final int REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION_RESULT = 1;
     private static final int STATE_PREVIEW = 0;
@@ -70,6 +73,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             setupCamera(width, height);
             configureTransform(width, height);
             connectCamera();
+            setupFlashButton();
         }
 
         @Override
@@ -94,7 +98,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         public void onOpened(CameraDevice camera) {
             mCameraDevice = camera;
             mMediaRecorder = new MediaRecorder();
-            if (mIsRecording) {
+            if (isRecording) {
                 try {
                     createVideoFileName();
                 } catch (IOException e) {
@@ -113,8 +117,6 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             } else {
                 startPreview();
             }
-            // Toast.makeText(getApplicationContext(),
-            //         "Camera connection made!", Toast.LENGTH_SHORT).show();
         }
 
         @Override
@@ -144,7 +146,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                 }
             };
 
-    private boolean mFlashSupported;
+    private boolean isFlashSupported;
 
     private class ImageSaver implements Runnable {
 
@@ -248,8 +250,9 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
     private ImageButton mRecordImageButton;
     private ImageButton mStillImageButton;
-    private boolean mIsRecording = false;
-    private boolean mIsTimelapse = false;
+    private SwitchCompat flashButton;
+    private boolean isRecording = false;
+    private boolean isTimelapse = false;
 
     private File mVideoFolder;
     private String mVideoFileName;
@@ -285,10 +288,11 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         mChronometer = (Chronometer) findViewById(R.id.chronometer);
         mTextureView = (AutoFitTextureView) findViewById(R.id.textureView);
         mStillImageButton = (ImageButton) findViewById(R.id.cameraImageButton2);
+        flashButton = (SwitchCompat) findViewById(R.id.flashButton);
         mStillImageButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (!(mIsTimelapse || mIsRecording)) {
+                if (!(isTimelapse || isRecording)) {
                     checkWriteStoragePermission();
                 }
                 lockFocus();
@@ -298,11 +302,11 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         mRecordImageButton.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                if (mIsRecording || mIsTimelapse) {
+                if (isRecording || isTimelapse) {
                     mChronometer.stop();
                     mChronometer.setVisibility(View.INVISIBLE);
-                    mIsRecording = false;
-                    mIsTimelapse = false;
+                    isRecording = false;
+                    isTimelapse = false;
                     mRecordImageButton.setImageResource(R.mipmap.btn_video_online);
 
                     // Starting the preview prior to stopping recording which should hopefully
@@ -316,7 +320,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                     sendBroadcast(mediaStoreUpdateIntent);
 
                 } else {
-                    mIsRecording = true;
+                    isRecording = true;
                     mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
                     checkWriteStoragePermission();
                 }
@@ -325,11 +329,14 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         mRecordImageButton.setOnLongClickListener(new View.OnLongClickListener() {
             @Override
             public boolean onLongClick(View v) {
-                mIsTimelapse = true;
+                isTimelapse = true;
                 mRecordImageButton.setImageResource(R.mipmap.btn_timelapse);
                 checkWriteStoragePermission();
                 return true;
             }
+        });
+        flashButton.setOnCheckedChangeListener((buttonView, isChecked) -> {
+            switchFlash(isChecked);
         });
     }
 
@@ -343,6 +350,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             setupCamera(mTextureView.getWidth(), mTextureView.getHeight());
             configureTransform(mTextureView.getWidth(), mTextureView.getHeight());
             connectCamera();
+            setupFlashButton();
         } else {
             mTextureView.setSurfaceTextureListener(mSurfaceTextureListener);
         }
@@ -363,8 +371,8 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         }
         if (requestCode == REQUEST_WRITE_EXTERNAL_STORAGE_PERMISSION_RESULT) {
             if (grantResults[0] == PackageManager.PERMISSION_GRANTED) {
-                if (mIsRecording || mIsTimelapse) {
-                    mIsRecording = true;
+                if (isRecording || isTimelapse) {
+                    isRecording = true;
                     mRecordImageButton.setImageResource(R.mipmap.btn_video_busy);
                 }
                 Toast.makeText(this,
@@ -379,9 +387,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     @Override
     protected void onPause() {
         closeCamera();
-
         stopBackgroundThread();
-
         super.onPause();
     }
 
@@ -431,9 +437,34 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
                 // Check if the flash is supported.
                 Boolean available = cameraCharacteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
-                mFlashSupported = available == null ? false : available;
+                isFlashSupported = available == null ? false : available;
 
                 return;
+            }
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
+    }
+
+    // Enable or disable the flash button
+    private void setupFlashButton() {
+        boolean backCamera = CAMERA_BACK.equals(mCameraId);
+        flashButton.setVisibility((backCamera && isFlashSupported) ? View.VISIBLE : View.GONE);
+    }
+
+    // Torch On/Off mode
+    public void switchFlash(boolean toEnable) {
+        if (!mCameraId.equals(CAMERA_BACK) || !isFlashSupported) {
+            return;
+        }
+
+        try {
+            if (isRecording) {
+                mCaptureRequestBuilder.set(CaptureRequest.FLASH_MODE, toEnable ?
+                        CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
+                mRecordCaptureSession.setRepeatingRequest(mCaptureRequestBuilder.build(), null, null);
+            } else {
+                startPreview();
             }
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -465,11 +496,10 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
     }
 
     private void startRecord() {
-
         try {
-            if (mIsRecording) {
+            if (isRecording) {
                 setupMediaRecorder();
-            } else if (mIsTimelapse) {
+            } else if (isTimelapse) {
                 setupTimelapse();
             }
             SurfaceTexture surfaceTexture = mTextureView.getSurfaceTexture();
@@ -479,6 +509,8 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
             mCaptureRequestBuilder.addTarget(previewSurface);
             mCaptureRequestBuilder.addTarget(recordSurface);
+            mCaptureRequestBuilder.set(CaptureRequest.FLASH_MODE, flashButton.isChecked()
+                    ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
 
             mCameraDevice.createCaptureSession(Arrays.asList(previewSurface, recordSurface, mImageReader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
@@ -513,6 +545,8 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         try {
             mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             mCaptureRequestBuilder.addTarget(previewSurface);
+            mCaptureRequestBuilder.set(CaptureRequest.FLASH_MODE, flashButton.isChecked()
+                    ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
 
             mCameraDevice.createCaptureSession(Arrays.asList(previewSurface, mImageReader.getSurface()),
                     new CameraCaptureSession.StateCallback() {
@@ -541,13 +575,15 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
 
     private void startStillCaptureRequest() {
         try {
-            if (mIsRecording) {
+            if (isRecording) {
                 mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_VIDEO_SNAPSHOT);
             } else {
                 mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
             }
             mCaptureRequestBuilder.addTarget(mImageReader.getSurface());
             mCaptureRequestBuilder.set(CaptureRequest.JPEG_ORIENTATION, mTotalRotation);
+            mCaptureRequestBuilder.set(CaptureRequest.FLASH_MODE, flashButton.isChecked()
+                    ? CaptureRequest.FLASH_MODE_TORCH : CaptureRequest.FLASH_MODE_OFF);
 
             CameraCaptureSession.CaptureCallback stillCaptureCallback = new
                     CameraCaptureSession.CaptureCallback() {
@@ -563,7 +599,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                         }
                     };
 
-            if (mIsRecording) {
+            if (isRecording) {
                 mRecordCaptureSession.capture(mCaptureRequestBuilder.build(), stillCaptureCallback, null);
             } else {
                 mPreviewCaptureSession.capture(mCaptureRequestBuilder.build(), stillCaptureCallback, null);
@@ -663,7 +699,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
                 } catch (IOException e) {
                     e.printStackTrace();
                 }
-                if (mIsTimelapse || mIsRecording) {
+                if (isTimelapse || isRecording) {
                     startRecord();
                     mMediaRecorder.start();
                     mChronometer.setBase(SystemClock.elapsedRealtime());
@@ -682,7 +718,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
             } catch (IOException e) {
                 e.printStackTrace();
             }
-            if (mIsRecording || mIsTimelapse) {
+            if (isRecording || isTimelapse) {
                 startRecord();
                 mMediaRecorder.start();
                 mChronometer.setBase(SystemClock.elapsedRealtime());
@@ -719,7 +755,7 @@ public class Camera2VideoImageActivity extends AppCompatActivity {
         mCaptureState = STATE_WAIT_LOCK;
         mCaptureRequestBuilder.set(CaptureRequest.CONTROL_AF_TRIGGER, CaptureRequest.CONTROL_AF_TRIGGER_START);
         try {
-            if (mIsRecording) {
+            if (isRecording) {
                 mRecordCaptureSession.capture(mCaptureRequestBuilder.build(), mRecordCaptureCallback, mBackgroundHandler);
             } else {
                 mPreviewCaptureSession.capture(mCaptureRequestBuilder.build(), mPreviewCaptureCallback, mBackgroundHandler);
